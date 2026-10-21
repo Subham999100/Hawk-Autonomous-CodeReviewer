@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hawk-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hawk
+      POSTGRES_PASSWORD: hawk_secure_password
+      POSTGRES_DB: hawk_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hawk -d hawk_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: hawk-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: hawk-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://hawk:hawk_secure_password@postgres:5432/hawk_db
+      DATABASE_SYNC_URL: postgresql://hawk:hawk_secure_password@postgres:5432/hawk_db
+      REDIS_URL: redis://redis:6379/0
+      AUTH_PROVIDER: jwt
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-hawk-super-secret-development-key-change-in-production-32chars}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      JEV_API_KEY: ${JEV_API_KEY:-}
+      JEV_API_BASE_URL: ${JEV_API_BASE_URL:-https://api.typesafe.ai/v1/systemone}
+      OBSIDIAN_API_URL: ${OBSIDIAN_API_URL:-https://127.0.0.1:27124}
+      OBSIDIAN_API_KEY: ${OBSIDIAN_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: hawk-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://hawk:hawk_secure_password@postgres:5432/hawk_db
+      DATABASE_SYNC_URL: postgresql://hawk:hawk_secure_password@postgres:5432/hawk_db
+      REDIS_URL: redis://redis:6379/0
+      AUTH_PROVIDER: jwt
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-hawk-super-secret-development-key-change-in-production-32chars}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      JEV_API_KEY: ${JEV_API_KEY:-}
+      JEV_API_BASE_URL: ${JEV_API_BASE_URL:-https://api.typesafe.ai/v1/systemone}
+      OBSIDIAN_API_URL: ${OBSIDIAN_API_URL:-https://127.0.0.1:27124}
+      OBSIDIAN_API_KEY: ${OBSIDIAN_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: hawk-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
